@@ -1,0 +1,171 @@
+---
+title: "Untitled"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# 
+library(readstata13)
+library(tidyverse)
+library(multcomp)
+library(multiwayvcov)
+library(lmtest)
+dat <- read.dta13("0422analysis.dta")
+
+# Table 1. Summary Statistics
+# panel A
+tab1A<-dat%>% dplyr::select(male, age, agpop, educ, ricearea_2010, rice_inc, 
+             disaster_yes, disaster_loss, risk_averse, 
+             disaster_prob, understanding)%>%
+  summarise_all(funs(mean = mean(., na.rm = TRUE), 
+                     sd = sd(., na.rm = TRUE)))%>%
+  matrix(nrow=11)
+colnames(tab1A)<-c('Sample Mean','Sample Std. Dev')
+knitr::kable(tab1A,caption='Table1. Panel A')
+
+# panel B
+tab1B<-dat%>% dplyr::select(network_obs, network_rate_preintensive, 
+                    network_twoside, network_second)%>%
+  summarise_all(funs(mean = mean(., na.rm = TRUE), 
+                     sd = sd(., na.rm = TRUE)))%>%
+  matrix(nrow=4)
+colnames(tab1B)<-c('Sample Mean','Sample Std. Dev')
+knitr::kable(tab1B,caption='Table1. Panel B')
+
+# panel C
+tab1C<-dat%>% dplyr::select(indegree, path_out_ind, eigenvector)%>%
+  summarise_all(funs(mean = mean(., na.rm = TRUE), 
+                     sd = sd(., na.rm = TRUE)))%>%
+  matrix(nrow=3)
+colnames(tab1C)<-c('Sample Mean','Sample Std. Dev')
+knitr::kable(tab1C,caption='Table1. Panel C')
+
+# panel D
+takeup_summary <- dat %>% 
+  dplyr::select(takeup_survey) %>% 
+  summarise_all(funs(n = sum(!is.na(.)), mean = mean(., na.rm = TRUE), sd = sd(., na.rm = TRUE))) %>% 
+  matrix(nrow = 1, ncol = 3) %>% 
+  data.frame() %>% 
+  rename(n = X1, mean = X2, sd = X3) %>% 
+  mutate(session = "total")
+
+dat$session <- 0
+dat$session[dat$delay == 0 & dat$intensive == 0] <- 11
+dat$session[dat$delay == 0 & dat$intensive == 1] <- 12
+dat$session[dat$delay == 1 & dat$intensive == 0] <- 21
+dat$session[dat$delay == 1 & dat$intensive == 1] <- 22
+dat$session <- as.factor(dat$session)
+
+takeup_by_session <- dat %>% 
+  dplyr::select(takeup_survey, info_none, session) %>% 
+  filter(info_none == 1) %>% 
+  group_by(session) %>% 
+  summarise( mean = mean(takeup_survey, na.rm = TRUE), sd = sd(takeup_survey, na.rm = TRUE))%>%
+  data.frame()
+
+tab1D <- rbind( takeup_summary[,2:3],takeup_by_session[,2:3])
+knitr::kable(tab1D,caption='Table1. Panel D')
+
+# Table 2
+# column 1
+fit1 <- lm(takeup_survey ~ intensive + male + age + agpop + ricearea_2010 + literacy + 
+                village, data = dat[dat$delay == 0, ])
+# coefficient of Intensive
+vcov1 <- cluster.vcov(fit1, dat[dat$delay == 0, ]$address)
+rcse1 <- sqrt(diag(vcov1))
+knitr::kable(rbind(est=round(coef(fit1)[2],3),# coefficient
+              sd=round(coeftest(fit1, vcov1)[2,2],3))) # sd
+# column 2
+fit2 <- lm(takeup_survey ~intensive + network_rate_preintensive +
+                  + friend1 + friend2 + friend3 + friend4 + friend5 + factor(village),
+                  data = dat[dat$delay == 1 & dat$info_none == 1, ])
+vcov2 <- cluster.vcov(fit2, dat[dat$delay == 1 & dat$info_none == 1, ]$address)
+rcse2 <- sqrt(diag(vcov2))
+knitr::kable(rbind(est=round(coef(fit2)[2:3],3),# coefficient
+              sd=round(coeftest(fit2, vcov2)[2:3,2],3))) # sd
+
+# column 3
+fit3 <- lm(takeup_survey ~ intensive+network_rate_presimple +  network_rate_preintensive
+              + friend1 + friend2 + friend3 + friend4 + friend5 + village,
+              data = dat[dat$delay == 1 & dat$info_none == 1, ])
+vcov3 <- cluster.vcov(fit3, dat[dat$delay == 1 & dat$info_none == 1, ]$address)
+rcse3 <- sqrt(diag(vcov3))
+knitr::kable(rbind(est=round(coef(fit3)[2:4],3),# coefficient
+              sd=round(coeftest(fit3, vcov3)[2:4,2],3))) # sd
+
+# column 4
+fit4 <- lm(takeup_survey ~ intensive + network_rate_preintensive + network_rate_preintensive:intensive + male + age + agpop + ricearea_2010
+              + literacy + risk_averse + disaster_prob + friend1 + friend2 + friend3 + friend4 + friend5 + village
+              , data = dat[dat$delay == 1 & dat$info_none == 1, ])
+vcov4 <- cluster.vcov(fit4, dat[dat$delay == 1 & dat$info_none == 1, ]$address)
+rcse4 <- sqrt(diag(vcov4))
+knitr::kable(rbind(est=round(coef(fit4)[c(2,3,length(coef(fit4)))],3),# coefficient
+              sd=round(coeftest(fit4, vcov4)[c(2,3,57),2],3))) # sd
+
+# column 5
+fit5 <- lm(takeup_survey ~ intensive + network_onlyone + network_onlytwo + network_twomore
+              + network_onlyone:intensive + network_onlytwo:intensive + network_twomore:intensive +
+                + male + age + agpop + ricearea_2010 + literacy + risk_averse + disaster_prob 
+              + friend1 + friend2 + friend3 + friend4 + friend5 + village
+              , data = dat[dat$delay == 1 & dat$info_none == 1, ])
+vcov5 <- cluster.vcov(fit5, dat[dat$delay == 1 & dat$info_none == 1, ]$address)
+rcse5 <- sqrt(diag(vcov5))
+knitr::kable(rbind(est=round(coef(fit5)[c(2,14:16)],3),# coefficient
+              sd=round(coeftest(fit5, vcov5)[c(2,13:15),2],3))) # sd
+
+# column 6
+dat$nofriend = 1
+dat$nofriend[dat$delay == 1 & dat$info_none == 1 & dat$network_yes == 1] = 0
+dat6 = dat[ (dat$delay == 0 | (dat$delay == 1 & dat$info_none == 1 & dat$nofriend == 1)), ]
+dat6$inter = dat6$intensive * dat6$delay
+fit6 <- lm(takeup_survey ~ intensive + delay + intensive*delay 
+              + male + age + agpop + ricearea_2010 + literacy + risk_averse + disaster_prob 
+              + village
+              , data = dat6)
+vcov6 <- cluster.vcov(fit6, dat6$address)
+rcse6 <- sqrt(diag(vcov6))
+knitr::kable(rbind(est=round(coef(fit6)[c(2,3,57)],3),# coefficient
+              sd=round(coeftest(fit6, vcov6)[c(2,3,57),2],3))) # sd
+
+
+#Table 3
+# colum 1
+fit1 <- lm(takeup_survey ~ network_twoside
+              + male + age + agpop + ricearea_2010 + literacy + intensive + risk_averse + disaster_prob + friend1 
+              + friend2 + friend3 + friend4 + friend5 + factor(village),
+              data = dat[dat$delay == 1 & dat$info_none == 1, ])
+vcov1 <- cluster.vcov(fit1, dat[dat$delay == 1 & dat$info_none == 1, ]$address)
+rcse1 <- sqrt(diag(vcov1))
+# R2
+summary(fit1)$r.squared
+knitr::kable(rbind(est=round(coef(fit1)[2],3),# coefficient
+                   sd=round(coeftest(fit1, vcov1)[2,2],3))) # sd
+
+#column 2
+fit2 <- lm(takeup_survey ~ network_second
+              + male + age + agpop + ricearea_2010 + literacy + intensive + risk_averse + disaster_prob + friend1 
+              + friend2 + friend3 + friend4 + friend5 + factor(village),
+              data = dat[dat$delay == 1 & dat$info_none == 1, ])
+vcov2 <- cluster.vcov(fit2, dat[dat$delay == 1 & dat$info_none == 1, ]$address)
+rcse2 <- sqrt(diag(vcov2))
+# R2
+summary(fit2)$r.squared
+knitr::kable(rbind(est=round(coef(fit2)[2],3),# coefficient
+                   sd=round(coeftest(fit2, vcov2)[2,2],3))) # sd
+
+# column 3
+fit3 <- lm(takeup_survey ~ network_onlyone + network_onlytwo + network_twomore
+              + male + age + agpop + ricearea_2010 + literacy + intensive + risk_averse + disaster_prob + friend1 
+              + friend2 + friend3 + friend4 + friend5 + factor(village),
+              data = dat[dat$delay == 1 & dat$info_none == 1, ])
+vcov3 <- cluster.vcov(fit3, dat[dat$delay == 1 & dat$info_none == 1, ]$address)
+rcse3 <- sqrt(diag(vcov3))
+# R2
+summary(fit3)$r.squared
+knitr::kable(rbind(est=round(coef(fit3)[2:4],3),# coefficient
+                   sd=round(coeftest(fit3, vcov3)[2:4,2],3))) # sd
+```
